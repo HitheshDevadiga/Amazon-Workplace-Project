@@ -1,0 +1,133 @@
+import pandas as pd
+import scipy.stats
+from numpy import sqrt
+
+def get_posterior_mean(data_weight, data_mean, prior_mean):
+    return data_weight * data_mean + (1 - data_weight) * prior_mean
+
+def get_posterior_std(prior_std, data_std):
+    w = get_data_weight(prior_std, data_std)
+    return sqrt(w) * data_std
+
+def get_posterior_ppr(posterior_mean, posterior_std):
+    return scipy.stats.norm.cdf(posterior_mean / posterior_std)
+
+def get_data_weight(prior_std, data_std):
+    return prior_std**2 / (prior_std**2 + data_std**2)
+
+def get_percent_impact_std(overall_percent_impact, overall_annualized_impact,
+                           overall_annualized_ci_upper, overall_annualized_ci_lower):
+    annualization_scaling = overall_percent_impact / overall_annualized_impact
+    annualized_impact_std = (overall_annualized_ci_upper - overall_annualized_ci_lower) / (2 * 1.96)
+    return annualization_scaling * annualized_impact_std
+
+def compute_posterior(input_data):
+    # Set variable names
+    data_mean = "regression_overall_percent_impact"
+    data_variance = "regression_overall_percent_impact_variance"
+    annualized_data_mean = "regression_overall_annualized_impact"
+    annualized_ci_upper = "regression_overall_annualized_ci_upper"
+    annualized_ci_lower = "regression_overall_annualized_ci_lower"
+    data_weight_old_priors = "regression_overall_percent_data_weight_old_priors"
+    data_weight_new_priors = "regression_overall_percent_data_weight_new_priors"
+    posterior_percent_impact_old_priors = "regression_overall_posterior_percent_impact"
+    posterior_percent_impact_new_priors = "regression_overall_posterior_percent_impact_new_priors"
+    posterior_percent_impact_variance_old_priors = "regression_overall_posterior_percent_impact_variance_old_priors"
+    posterior_percent_impact_variance_new_priors = "regression_overall_posterior_percent_impact_variance_new_priors"
+    posterior_ppr_old_priors = "regression_overall_posterior_probability_positive"
+    posterior_ppr_new_priors = "regression_overall_posterior_probability_positive_new_priors"
+    posterior_annualized_impact_variance_old_priors = "regression_overall_posterior_annualized_impact_variance_old_priors"
+    posterior_annualized_impact_new_priors = "regression_overall_posterior_annualized_impact_new_priors"
+    posterior_annualized_impact_variance_new_priors = "regression_overall_posterior_annualized_impact_variance_new_priors"
+
+    # Compute missing columns
+    input_data[data_variance] = pow(get_percent_impact_std(input_data[data_mean],
+                                                           input_data[annualized_data_mean],
+                                                           input_data[annualized_ci_upper],
+                                                           input_data[annualized_ci_lower]), 2).astype(float)
+
+    input_data[posterior_percent_impact_variance_old_priors] = pow(input_data[posterior_percent_impact_old_priors] /
+                                                                   scipy.stats.norm.ppf(input_data[posterior_ppr_old_priors]), 2)
+
+    # Compute data weights
+    input_data[data_weight_old_priors] = input_data[posterior_percent_impact_variance_old_priors] / \
+                                         input_data[data_variance]
+
+    input_data[data_weight_new_priors] = (input_data["prior_var_mle"]) / \
+                                         (input_data[data_variance] + input_data["prior_var_mle"])
+
+    # Compute proposed posterior
+    input_data[posterior_percent_impact_new_priors] = get_posterior_mean(input_data[data_weight_new_priors],
+                                                                         input_data[data_mean],
+                                                                         input_data["prior_mean_mle"])
+
+    input_data[posterior_percent_impact_variance_new_priors] = pow(get_posterior_std(
+        sqrt(input_data["prior_var_mle"]),
+        sqrt(input_data[data_variance])), 2)
+
+    input_data[posterior_ppr_new_priors] = get_posterior_ppr(input_data[posterior_percent_impact_new_priors],
+                                                             sqrt(input_data[posterior_percent_impact_variance_new_priors]))
+
+    # Annualized impact
+    annualization_factor = input_data["regression_overall_posterior_annualized_impact"] / \
+                           input_data["regression_overall_posterior_percent_impact"]
+
+    input_data[posterior_annualized_impact_new_priors] = input_data[posterior_percent_impact_new_priors] * annualization_factor
+
+    input_data[posterior_annualized_impact_variance_old_priors] = input_data[posterior_percent_impact_variance_old_priors] * pow(annualization_factor, 2)
+    input_data[posterior_annualized_impact_variance_new_priors] = input_data[posterior_percent_impact_variance_new_priors] * pow(annualization_factor, 2)
+
+    input_data.rename(columns={
+        "regression_overall_posterior_percent_impact": "regression_overall_posterior_percent_impact_old_priors",
+        "regression_overall_posterior_annualized_impact": "regression_overall_posterior_annualized_impact_old_priors",
+        "regression_overall_posterior_probability_positive": "regression_overall_posterior_probability_positive_old_priors"
+    }, inplace=True)
+
+    # Subset to
+    variables_to_subset = ["weblab_id",
+                           "treatment_name_a",
+                           "treatment_name_b",
+                           "metric_id",
+                           "metric_name",
+                           "marketplace_id",
+                           "analysis_start_date",
+                           "analysis_end_date",
+                           "regression_overall_percent_impact",
+                           "regression_overall_percent_impact_variance",
+                           "regression_overall_percent_data_weight_old_priors",
+                           "regression_overall_percent_data_weight_new_priors",
+                           "regression_overall_posterior_probability_positive_old_priors",
+                           "regression_overall_posterior_probability_positive_new_priors",
+                           "regression_overall_posterior_percent_impact_variance_old_priors",
+                           "regression_overall_posterior_percent_impact_variance_new_priors",
+                           "regression_overall_posterior_percent_impact_old_priors",
+                           "regression_overall_posterior_percent_impact_new_priors",
+                           "regression_overall_posterior_annualized_impact_old_priors",
+                           "regression_overall_posterior_annualized_impact_new_priors",
+                           "regression_overall_posterior_annualized_impact_variance_old_priors",
+                           "regression_overall_posterior_annualized_impact_variance_new_priors"
+                           ]
+    input_data = input_data[variables_to_subset]
+
+    return input_data
+
+''' # Provide file paths directly (adjust paths accordingly)
+prior_estimates_file = "path/to/estimated_priors_all.csv"
+weblab_file = "path/to/weblab_file.csv"
+target_file = "path/to/target_file.csv"  '''
+
+df_priors = pd.read_csv("/Users/hddevadi/Desktop/Python/estimated_priors_all.csv")
+
+df_weblabs = pd.read_csv("/Users/hddevadi/Desktop/Python/weblab_impact_file.csv")
+
+# Drop 'metric_name' from the input table
+df_weblabs.drop(['metric_name'], axis=1, inplace=True)
+
+# Merge in the priors
+df_weblabs = df_weblabs.merge(df_priors, on="metric_id", how="left")
+
+# Compute the posterior for the regression adjusted estimates
+df_weblabs = compute_posterior(df_weblabs)
+
+# Write the result to the target file
+df_weblabs.to_csv("/Users/hddevadi/Desktop/Python/target_file.csv")
