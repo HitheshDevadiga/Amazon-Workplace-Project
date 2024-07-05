@@ -1,0 +1,27 @@
+import html
+import pandas as pd
+def convert_to_excel(html_data, output_file):
+    # Decode HTML entities
+    decoded_data = html.unescape(html_data)
+    
+    # Replace 'null' with None
+    decoded_data = decoded_data.replace('null', 'None')
+    
+    # Convert decoded data to Python dictionary
+    data = eval(decoded_data)
+    
+    # Convert the dictionary to a pandas DataFrame
+    df = pd.DataFrame(data)
+    
+    # Convert DataFrame to Excel file
+    df.to_excel(output_file, index=False)
+    
+    print(f"Excel file '{output_file}' has been created successfully.")
+# HTML-encoded data
+html_data = """
+"""
+
+# Specify the output file name
+output_file = "output.xlsx"
+# Call the function to convert to Excel
+convert_to_excel(html_data, output_file)
